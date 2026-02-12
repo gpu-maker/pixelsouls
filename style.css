@@ -1,47 +1,26 @@
 body{
-margin:0;
-background:#000;
-font-family:monospace;
-overflow:hidden;
-color:white;
+  margin:0;
+  background:black;
+  overflow:hidden;
+  font-family:monospace;
 }
 
-#game{
-display:block;
-margin:auto;
-background:#111;
-image-rendering:pixelated;
+canvas{
+  image-rendering:pixelated;
 }
 
 #ui{
-position:absolute;
-top:10px;
-left:10px;
-}
-
-.panel{
-position:absolute;
-top:100px;
-left:200px;
-width:600px;
-height:500px;
-background:#111;
-border:3px solid white;
-padding:20px;
+  position:absolute;
+  top:0;
+  left:0;
+  color:white;
+  padding:10px;
 }
 
 .hidden{display:none}
 
-#stats{
-background:#111;
-padding:10px;
-border:2px solid white;
-}
-
-#minimap{
-position:absolute;
-right:20px;
-top:20px;
-border:2px solid white;
-background:#000;
+.panel{
+  background:rgba(0,0,0,.85);
+  padding:12px;
+  border:2px solid #555;
 }
