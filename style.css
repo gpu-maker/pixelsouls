@@ -1,56 +1,47 @@
 body{
 margin:0;
 background:#000;
-color:white;
 font-family:monospace;
 overflow:hidden;
+color:white;
 }
 
-#gameContainer{
-position:relative;
-width:1500px;
+#game{
+display:block;
 margin:auto;
-}
-
-canvas{
+background:#111;
 image-rendering:pixelated;
-border:3px solid white;
-background:black;
 }
 
 #ui{
 position:absolute;
-top:0;
-left:0;
-width:100%;
-height:100%;
-pointer-events:none;
-}
-
-#hud{
-position:absolute;
 top:10px;
 left:10px;
-font-size:20px;
 }
 
 .panel{
 position:absolute;
-top:50%;
-left:50%;
-transform:translate(-50%,-50%);
+top:100px;
+left:200px;
+width:600px;
+height:500px;
 background:#111;
 border:3px solid white;
 padding:20px;
-pointer-events:auto;
 }
 
 .hidden{display:none}
 
-button{
-background:black;
-color:white;
-border:1px solid white;
-padding:6px 12px;
-margin:4px;
+#stats{
+background:#111;
+padding:10px;
+border:2px solid white;
+}
+
+#minimap{
+position:absolute;
+right:20px;
+top:20px;
+border:2px solid white;
+background:#000;
 }
