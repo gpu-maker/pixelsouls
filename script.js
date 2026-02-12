@@ -1,372 +1,385 @@
-const canvas=document.getElementById("game");
-const ctx=canvas.getContext("2d");
+// ===============================
+// CANVAS SETUP
+// ===============================
 
-////////////////////////////////////////////////////////////
-// GLOBAL GAME STATE
-////////////////////////////////////////////////////////////
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
 
-const Game={
+const mini = document.getElementById("minimap");
+const mctx = mini.getContext("2d");
+
+const W = canvas.width;
+const H = canvas.height;
+
+// ===============================
+// GAME STATE
+// ===============================
+
+let game = {
 paused:false,
-time:0,
-tile:32,
-world:[],
-entities:[],
-quests:[],
-gold:100,
-biome:"plains",
-
-resume(){
-Game.paused=false;
-UI.hide("pauseMenu");
+gold:50,
+playerHP:100,
+potions:3,
+biome:"forest",
+xp:0,
+level:1,
+skills:{
+strength:0,
+magic:0,
+vitality:0
 },
-
-////////////////////////////////////////////////////////////
-// SAVE SYSTEM (LOCAL + FILE)
-////////////////////////////////////////////////////////////
-
-save(){
-localStorage.setItem("pixelSoulsSave",JSON.stringify({
-player:Player,
-gold:Game.gold,
-quests:Game.quests,
-biome:Game.biome
-}));
-},
-
-load(){
-const s=localStorage.getItem("pixelSoulsSave");
-if(!s)return;
-const data=JSON.parse(s);
-Object.assign(Player,data.player);
-Game.gold=data.gold;
-Game.quests=data.quests;
-Game.biome=data.biome;
-},
-
-downloadSave(){
-const data=JSON.stringify(localStorage.getItem("pixelSoulsSave"));
-const blob=new Blob([data],{type:"text/plain"});
-const a=document.createElement("a");
-a.href=URL.createObjectURL(blob);
-a.download="pixelSouls.save";
-a.click();
-}
+quests:[
+{title:"Find the village",done:false}
+]
 };
 
-////////////////////////////////////////////////////////////
-// INPUT
-////////////////////////////////////////////////////////////
-
-const Keys={};
-
-window.addEventListener("keydown",e=>{
-Keys[e.key.toLowerCase()]=true;
-
-if(e.key==="Escape"){
-Game.paused=!Game.paused;
-UI.toggle("pauseMenu");
-}
-
-if(e.key==="k")UI.toggle("skillTree");
-if(e.key==="j")UI.toggle("journal");
-});
-
-window.addEventListener("keyup",e=>{
-Keys[e.key.toLowerCase()]=false;
-});
-
-////////////////////////////////////////////////////////////
-// PIXEL SPRITE DRAWER (NO PNG)
-////////////////////////////////////////////////////////////
-
-function drawSprite(x,y,pixels,size=4){
-for(let r=0;r<pixels.length;r++){
-for(let c=0;c<pixels[r].length;c++){
-if(pixels[r][c]){
-ctx.fillStyle=pixels[r][c];
-ctx.fillRect(x+c*size,y+r*size,size,size);
-}
-}
-}
-}
-
-////////////////////////////////////////////////////////////
+// ===============================
 // PLAYER
-////////////////////////////////////////////////////////////
+// ===============================
 
-const Player={
+const player = {
 x:500,
 y:400,
-hp:100,
-maxHp:100,
-speed:4,
-potions:3,
-level:1,
-xp:0,
-skills:{attack:1,magic:1,health:1},
-
-update(){
-if(Keys.w)Player.y-=Player.speed;
-if(Keys.s)Player.y+=Player.speed;
-if(Keys.a)Player.x-=Player.speed;
-if(Keys.d)Player.x+=Player.speed;
-},
-
-draw(){
-drawSprite(Player.x,Player.y,[
-[0,"white","white",0],
-["white","white","white","white"],
-[0,"white","white",0]
-]);
-}
+size:24,
+speed:3,
+color:"#5cf",
+mana:100
 };
 
-////////////////////////////////////////////////////////////
-// BIOMES
-////////////////////////////////////////////////////////////
+// ===============================
+// INPUT
+// ===============================
 
-const Biomes={
-plains:{color:"#2e8b57",enemy:"slime"},
-desert:{color:"#c2b280",enemy:"scarab"},
-snow:{color:"#e8f6ff",enemy:"wraith"},
-forest:{color:"#013220",enemy:"wolf"}
-};
+const keys = {};
 
-function generateWorld(){
-for(let y=0;y<50;y++){
-Game.world[y]=[];
-for(let x=0;x<80;x++){
-const r=Math.random();
-let biome="plains";
-if(r>.75)biome="forest";
-if(r>.85)biome="desert";
-if(r>.95)biome="snow";
-Game.world[y][x]=biome;
+addEventListener("keydown",e=>{
+keys[e.key]=true;
+
+if(e.key==="Escape") togglePause();
+if(e.key==="j") togglePanel("journal");
+if(e.key==="k") togglePanel("skillTree");
+if(e.key==="h") usePotion();
+if(e.key==="s") saveGame();
+});
+
+addEventListener("keyup",e=>keys[e.key]=false);
+
+// ===============================
+// PIXEL DRAWING SYSTEM (NO IMAGES)
+// ===============================
+
+function drawPixel(x,y,color,size=4){
+ctx.fillStyle=color;
+ctx.fillRect(x,y,size,size);
+}
+
+function drawSprite(x,y,pattern,scale=4){
+for(let r=0;r<pattern.length;r++){
+for(let c=0;c<pattern[r].length;c++){
+if(pattern[r][c]!==" "){
+drawPixel(
+x+c*scale,
+y+r*scale,
+pattern[r][c],
+scale
+);
 }
 }
 }
+}
 
-////////////////////////////////////////////////////////////
+// ===============================
+// SPRITES (PIXEL ONLY)
+// ===============================
+
+const playerSprite=[
+"  #5cf ",
+" ##### ",
+"  #5cf ",
+" ## ## ",
+"#     #"
+];
+
+const enemySprite=[
+"  red  ",
+" rrrrr ",
+"  rrr  ",
+" r r r "
+];
+
+const bossSprite=[
+" purplepurple ",
+"pppppppppppp",
+" pppppppppp ",
+"pppppppppppp"
+];
+
+// ===============================
 // ENEMIES
-////////////////////////////////////////////////////////////
+// ===============================
 
-class Enemy{
-constructor(x,y,type){
-this.x=x;
-this.y=y;
-this.hp=30;
-this.type=type;
+let enemies = [
+{x:900,y:500,hp:30,type:"forest"},
+{x:1300,y:200,hp:60,type:"desert"}
+];
+
+let bosses=[
+{x:2000,y:1000,hp:400}
+];
+
+// ===============================
+// WORLD + BIOMES
+// ===============================
+
+function getBiome(x){
+if(x<800) return "forest";
+if(x<1600) return "desert";
+return "ruins";
 }
 
-update(){
-const dx=Player.x-this.x;
-const dy=Player.y-this.y;
-this.x+=Math.sign(dx)*0.6;
-this.y+=Math.sign(dy)*0.6;
+function drawBiome(){
+let b = getBiome(player.x);
+
+if(b==="forest") ctx.fillStyle="#063";
+if(b==="desert") ctx.fillStyle="#a83";
+if(b==="ruins") ctx.fillStyle="#444";
+
+ctx.fillRect(0,0,W,H);
+
+game.biome=b;
 }
 
-draw(){
-drawSprite(this.x,this.y,[
-["red","red"],
-["red","red"]
-]);
-}
-}
+// ===============================
+// MOVEMENT
+// ===============================
 
-////////////////////////////////////////////////////////////
-// BOSS SYSTEM
-////////////////////////////////////////////////////////////
+function updatePlayer(){
 
-class Boss extends Enemy{
-constructor(x,y){
-super(x,y,"boss");
-this.hp=500;
-this.size=8;
+if(keys["w"]) player.y-=player.speed;
+if(keys["s"]) player.y+=player.speed;
+if(keys["a"]) player.x-=player.speed;
+if(keys["d"]) player.x+=player.speed;
+
 }
 
-draw(){
-drawSprite(this.x,this.y,[
-["purple","purple","purple"],
-["purple",0,"purple"],
-["purple","purple","purple"]
-],8);
-}
-}
+// ===============================
+// COMBAT
+// ===============================
 
-////////////////////////////////////////////////////////////
-// SHOPS / VILLAGES
-////////////////////////////////////////////////////////////
-
-const Shop={
-open(){
-UI.show("shop");
-document.getElementById("shop").innerHTML=`
-<h2>Village Shop</h2>
-<button onclick="Shop.buyPotion()">Buy Potion (10g)</button>
-<button onclick="UI.hide('shop')">Close</button>
-`;
-},
-
-buyPotion(){
-if(Game.gold>=10){
-Game.gold-=10;
-Player.potions++;
-}
-}
-};
-
-////////////////////////////////////////////////////////////
-// SPELL SYSTEM
-////////////////////////////////////////////////////////////
-
-const Spells={
-cast(){
-Game.entities.push(new Projectile(Player.x,Player.y));
-}
-};
-
-class Projectile{
-constructor(x,y){
-this.x=x;
-this.y=y;
-this.life=60;
-}
-
-update(){
-this.x+=6;
-this.life--;
-}
-
-draw(){
-ctx.fillStyle="cyan";
-ctx.fillRect(this.x,this.y,8,8);
-}
-}
-
-////////////////////////////////////////////////////////////
-// QUEST JOURNAL
-////////////////////////////////////////////////////////////
-
-function addQuest(name){
-Game.quests.push({name,done:false});
-renderJournal();
-}
-
-function renderJournal(){
-const j=document.getElementById("journal");
-j.innerHTML="<h2>Quest Journal</h2>";
-Game.quests.forEach(q=>{
-j.innerHTML+=`<div>${q.done?"✔":"◻"} ${q.name}</div>`;
+function castSpell(){
+enemies.forEach(e=>{
+let d=Math.hypot(player.x-e.x,player.y-e.y);
+if(d<120) e.hp-=20+game.skills.magic*5;
 });
 }
 
-////////////////////////////////////////////////////////////
-// SKILL TREE
-////////////////////////////////////////////////////////////
+addEventListener("click",castSpell);
 
-function renderSkillTree(){
-const el=document.getElementById("skillTree");
-el.innerHTML=`
-<h2>Skill Tree</h2>
-<button onclick="upgradeSkill('attack')">Attack</button>
-<button onclick="upgradeSkill('magic')">Magic</button>
-<button onclick="upgradeSkill('health')">Health</button>
+// ===============================
+// POTIONS
+// ===============================
+
+function usePotion(){
+if(game.potions>0){
+game.playerHP+=30;
+game.potions--;
+}
+}
+
+// ===============================
+// SHOP SYSTEM
+// ===============================
+
+function openShop(){
+let shop=document.getElementById("shop");
+shop.classList.remove("hidden");
+shop.innerHTML=`
+<h2>Village Shop</h2>
+<button onclick="buyPotion()">Buy Potion (10 gold)</button>
 `;
 }
 
-function upgradeSkill(name){
-Player.skills[name]++;
-if(name==="health")Player.maxHp+=20;
+window.buyPotion=()=>{
+if(game.gold>=10){
+game.gold-=10;
+game.potions++;
 }
-
-////////////////////////////////////////////////////////////
-// UI
-////////////////////////////////////////////////////////////
-
-const UI={
-show(id){document.getElementById(id).classList.remove("hidden")},
-hide(id){document.getElementById(id).classList.add("hidden")},
-toggle(id){document.getElementById(id).classList.toggle("hidden")}
 };
 
-////////////////////////////////////////////////////////////
+// ===============================
+// SKILL TREE
+// ===============================
+
+function toggleSkillTree(){
+let el=document.getElementById("skillTree");
+el.classList.toggle("hidden");
+
+el.innerHTML=`
+<h2>Skill Tree</h2>
+Strength: ${game.skills.strength}
+<button onclick="upgradeSkill('strength')">+</button><br>
+
+Magic: ${game.skills.magic}
+<button onclick="upgradeSkill('magic')">+</button><br>
+
+Vitality: ${game.skills.vitality}
+<button onclick="upgradeSkill('vitality')">+</button>
+`;
+}
+
+window.upgradeSkill=(s)=>{
+if(game.xp>=10){
+game.skills[s]++;
+game.xp-=10;
+}
+toggleSkillTree();
+toggleSkillTree();
+};
+
+// ===============================
+// QUEST JOURNAL
+// ===============================
+
+function toggleJournal(){
+let j=document.getElementById("journal");
+j.classList.toggle("hidden");
+
+j.innerHTML="<h2>Quest Journal</h2>";
+game.quests.forEach(q=>{
+j.innerHTML+=`<div>${q.done?"✓":"○"} ${q.title}</div>`;
+});
+}
+
+// ===============================
+// PAUSE MENU
+// ===============================
+
+function togglePause(){
+game.paused=!game.paused;
+
+let p=document.getElementById("pauseMenu");
+p.classList.toggle("hidden");
+
+p.innerHTML=`
+<h2>Paused</h2>
+WASD Move<br>
+Click = Spell<br>
+H = Heal<br>
+J = Journal<br>
+K = Skills<br>
+S = Save Game
+`;
+}
+
+// ===============================
+// SAVE SYSTEM (FILE DOWNLOAD)
+// ===============================
+
+function saveGame(){
+
+let data=JSON.stringify({
+game,
+player
+});
+
+let blob=new Blob([data],{type:"application/json"});
+let a=document.createElement("a");
+
+a.href=URL.createObjectURL(blob);
+a.download="pixelsouls_save.json";
+a.click();
+}
+
+// ===============================
 // MINIMAP
-////////////////////////////////////////////////////////////
+// ===============================
 
 function drawMinimap(){
-const size=4;
-for(let y=0;y<Game.world.length;y++){
-for(let x=0;x<Game.world[y].length;x++){
-ctx.fillStyle=Biomes[Game.world[y][x]].color;
-ctx.fillRect(1200+x*size,10+y*size,size,size);
-}
-}
-ctx.fillStyle="white";
-ctx.fillRect(1200+Player.x/32*size,10+Player.y/32*size,size,size);
+
+mctx.fillStyle="#000";
+mctx.fillRect(0,0,200,200);
+
+mctx.fillStyle="white";
+mctx.fillRect(player.x/20,player.y/20,4,4);
+
 }
 
-////////////////////////////////////////////////////////////
-// WORLD DRAW
-////////////////////////////////////////////////////////////
+// ===============================
+// ENEMY UPDATE
+// ===============================
 
-function drawWorld(){
-for(let y=0;y<Game.world.length;y++){
-for(let x=0;x<Game.world[y].length;x++){
-ctx.fillStyle=Biomes[Game.world[y][x]].color;
-ctx.fillRect(x*32,y*32,32,32);
+function updateEnemies(){
+enemies=enemies.filter(e=>e.hp>0);
+
+enemies.forEach(e=>{
+let dx=player.x-e.x;
+let dy=player.y-e.y;
+let d=Math.hypot(dx,dy);
+
+if(d<200){
+e.x+=dx/d;
+e.y+=dy/d;
 }
+
+if(d<30) game.playerHP-=0.2;
+});
 }
-}
 
-////////////////////////////////////////////////////////////
-// GAME LOOP
-////////////////////////////////////////////////////////////
-
-function update(){
-if(Game.paused)return;
-
-Player.update();
-
-Game.entities.forEach(e=>e.update());
-Game.entities=Game.entities.filter(e=>e.life===undefined||e.life>0);
-
-Game.time++;
-if(Game.time%600===0)Game.save();
-}
+// ===============================
+// DRAW
+// ===============================
 
 function draw(){
-ctx.clearRect(0,0,canvas.width,canvas.height);
 
-drawWorld();
+drawBiome();
 
-Player.draw();
+drawSprite(player.x,player.y,playerSprite);
 
-Game.entities.forEach(e=>e.draw());
+enemies.forEach(e=>{
+drawSprite(e.x,e.y,enemySprite);
+});
 
-drawMinimap();
+bosses.forEach(b=>{
+drawSprite(b.x,b.y,bossSprite,6);
+});
 
-document.getElementById("hp").textContent=
-`HP ${Player.hp}/${Player.maxHp}`;
-
-document.getElementById("gold").textContent=
-` Gold ${Game.gold}`;
 }
 
+// ===============================
+// UI UPDATE
+// ===============================
+
+function updateUI(){
+hp.textContent=Math.floor(game.playerHP);
+gold.textContent=game.gold;
+pots.textContent=game.potions;
+}
+
+// ===============================
+// GAME LOOP
+// ===============================
+
 function loop(){
-update();
+
+if(!game.paused){
+updatePlayer();
+updateEnemies();
+}
+
 draw();
+drawMinimap();
+updateUI();
+
 requestAnimationFrame(loop);
 }
 
-////////////////////////////////////////////////////////////
-// STARTUP
-////////////////////////////////////////////////////////////
-
-generateWorld();
-Game.load();
-renderSkillTree();
-renderJournal();
-Game.entities.push(new Enemy(700,300,"slime"));
-Game.entities.push(new Boss(900,500));
-
 loop();
+
+// ===============================
+// PANEL TOGGLE HELPER
+// ===============================
+
+function togglePanel(name){
+if(name==="journal") return toggleJournal();
+if(name==="skillTree") return toggleSkillTree();
+}
