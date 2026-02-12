@@ -2,22 +2,39 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>SOULS ENGINE</title>
+<title>Souls Pixel Engine</title>
 <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
+
+<div id="gameWrapper">
 
 <canvas id="game" width="1500" height="1000"></canvas>
 
 <div id="ui">
-  <div id="hud"></div>
-  <div id="pauseMenu" class="hidden"></div>
-  <div id="skillTree" class="hidden"></div>
-  <div id="dialogueBox" class="hidden"></div>
+
+<div id="healthBar"></div>
+<div id="staminaBar"></div>
+<div id="gold"></div>
+
+<div id="minimap"></div>
+
+<div id="pauseMenu" class="hidden">
+<h2>Paused</h2>
+<p>WASD Move | Mouse Attack | Space Dodge | Q Lock | I Inventory</p>
+<button onclick="Game.resume()">Resume</button>
+<button onclick="SaveManager.saveFile()">Save</button>
+<button onclick="SaveManager.loadFile()">Load</button>
+</div>
+
+<div id="dialogue" class="hidden"></div>
+<div id="skillTree" class="hidden"></div>
+<div id="shopUI" class="hidden"></div>
+
+</div>
+
 </div>
 
 <script src="script.js"></script>
-
 </body>
 </html>
