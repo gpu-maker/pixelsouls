@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Pixel Souls</title>
+<link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<div id="gameContainer">
+
+<canvas id="game" width="1500" height="1000"></canvas>
+
+<div id="ui">
+
+<div id="hud">
+<span id="hp"></span>
+<span id="gold"></span>
+</div>
+
+<div id="pauseMenu" class="panel hidden">
+<h2>Paused</h2>
+<p>WASD — Move</p>
+<p>Mouse — Attack</p>
+<p>E — Interact</p>
+<p>Q — Spell</p>
+<p>I — Inventory</p>
+<p>K — Skill Tree</p>
+<p>J — Quest Journal</p>
+<p>M — Toggle Map</p>
+<p>ESC — Pause</p>
+<button onclick="Game.resume()">Resume</button>
+<button onclick="Game.downloadSave()">Download Save</button>
+</div>
+
+<div id="skillTree" class="panel hidden"></div>
+<div id="journal" class="panel hidden"></div>
+<div id="shop" class="panel hidden"></div>
+
+</div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
