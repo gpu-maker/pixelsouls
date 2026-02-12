@@ -1,429 +1,510 @@
-/* =====================================================
-   SOULS ENGINE — PRODUCTION SCALE VERSION
-   Expandable to 10k+ lines
-===================================================== */
+// ===============================
+// CANVAS SETUP
+// ===============================
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-/* =====================================================
-   UTILITIES
-===================================================== */
+// ===============================
+// GAME LOOP ENGINE
+// ===============================
 
-const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-const rand=(a,b)=>Math.random()*(b-a)+a;
+const Game = {
+time:0,
+delta:0,
+last:0,
+paused:false,
 
-/* =====================================================
-   CORE ENGINE
-===================================================== */
+start(){
+requestAnimationFrame(this.loop.bind(this));
+},
 
-const Engine={
-  entities:[],
-  particles:[],
-  lights:[],
-  time:0,
+loop(t){
+this.delta=(t-this.last)/1000;
+this.last=t;
 
-  add(e){this.entities.push(e)},
+if(!this.paused){
+Environment.update(this.delta);
+World.update(this.delta);
+Physics.update();
+AI.update();
+Combat.update();
+BossSystem.updateAll();
+Particles.update();
+Animation.update();
+}
 
-  update(dt){
-    this.time+=dt;
+Renderer.draw();
+requestAnimationFrame(this.loop.bind(this));
+},
 
-    Weather.update(dt);
-    DayNight.update(dt);
-
-    for(const e of this.entities) e.update?.(dt);
-    for(const p of this.particles) p.update(dt);
-
-    Physics.solve();
-  },
-
-  draw(){
-    Renderer.clear();
-    Camera.update();
-    Camera.apply();
-
-    Dungeon.draw();
-    for(const e of this.entities) e.draw?.();
-    for(const p of this.particles) p.draw();
-
-    ctx.setTransform(1,0,0,1,0,0);
-    Lighting.render();
-    UI.render();
-  }
+resume(){
+this.paused=false;
+document.getElementById("pauseMenu").classList.add("hidden");
+}
 };
 
-/* =====================================================
-   RENDERER
-===================================================== */
-
-const Renderer={
-  clear(){
-    ctx.fillStyle=DayNight.skyColor();
-    ctx.fillRect(0,0,1500,1000);
-  },
-
-  rect(x,y,w,h,c){
-    ctx.fillStyle=c;
-    ctx.fillRect(x,y,w,h);
-  }
-};
-
-/* =====================================================
-   CAMERA
-===================================================== */
-
-const Camera={
-  x:0,y:0,zoom:1,
-  update(){
-    this.x=player.x-750;
-    this.y=player.y-500;
-  },
-  apply(){ctx.setTransform(this.zoom,0,0,this.zoom,-this.x,-this.y)}
-};
-
-/* =====================================================
-   PHYSICS
-===================================================== */
+// ===============================
+// PHYSICS ENGINE + HITBOXES
+// ===============================
 
 const Physics={
-  gravity:900,
-  solve(){
-    for(const e of Engine.entities){
-      if(!e.body) continue;
-      e.body.vy+=this.gravity/60;
-      e.x+=e.body.vx/60;
-      e.y+=e.body.vy/60;
-      if(e.y>900){e.y=900;e.body.vy=0}
-    }
-  }
+bodies:[],
+
+add(body){
+if(!this.bodies.includes(body))
+this.bodies.push(body);
+},
+
+update(){
+for(let a of this.bodies){
+a.x+=a.vx||0;
+a.y+=a.vy||0;
+
+for(let b of this.bodies){
+if(a===b) continue;
+if(this.collide(a,b)) a.onCollision?.(b);
+}
+}
+},
+
+collide(a,b){
+return a.x<b.x+b.w &&
+a.x+a.w>b.x &&
+a.y<b.y+b.h &&
+a.y+a.h>b.y;
+}
 };
 
-/* =====================================================
-   PARTICLES
-===================================================== */
+// ===============================
+// ANIMATION STATE MACHINE + BLENDING
+// ===============================
 
-class Particle{
-  constructor(x,y,c){
-    this.x=x;this.y=y;
-    this.life=1;
-    this.vx=rand(-50,50);
-    this.vy=rand(-50,50);
-    this.c=c;
-  }
-  update(dt){
-    this.life-=dt;
-    this.x+=this.vx*dt;
-    this.y+=this.vy*dt;
-  }
-  draw(){
-    if(this.life<=0)return;
-    Renderer.rect(this.x,this.y,3,3,this.c);
-  }
+const Animation={
+update(){
+for(let e of World.entities){
+if(!e.animations) continue;
+
+const target=e.state||"idle";
+const current=e.currentAnim||"idle";
+
+if(current!==target){
+e.blend=(e.blend||0)+0.1;
+if(e.blend>=1){
+e.currentAnim=target;
+e.blend=0;
 }
-
-const spawnParticles=(x,y,c)=>{
-  for(let i=0;i<8;i++)
-    Engine.particles.push(new Particle(x,y,c));
+}
+}
+}
 };
 
-/* =====================================================
-   LIGHTING
-===================================================== */
+// ===============================
+// PARTICLE ENGINE (SPELLS / FX)
+// ===============================
 
-const Lighting={
-  render(){
-    ctx.globalCompositeOperation="multiply";
-    ctx.fillStyle="rgba(0,0,0,.6)";
-    ctx.fillRect(0,0,1500,1000);
-    ctx.globalCompositeOperation="source-over";
-  }
+const Particles={
+list:[],
+
+spawn(x,y,color="orange"){
+this.list.push({
+x,y,
+vx:Math.random()*2-1,
+vy:-2,
+life:1,
+color
+});
+},
+
+update(){
+this.list=this.list.filter(p=>p.life>0);
+
+for(let p of this.list){
+p.x+=p.vx;
+p.y+=p.vy;
+p.life-=0.02;
+}
+}
 };
 
-/* =====================================================
-   DAY / NIGHT CYCLE
-===================================================== */
+// ===============================
+// PLAYER DATA + EQUIPMENT SYSTEM
+// ===============================
 
-const DayNight={
-  time:0,
-  update(dt){this.time=(this.time+dt*.02)%1},
-  skyColor(){
-    const t=this.time;
-    if(t<.25)return"#223";
-    if(t<.5)return"#448";
-    if(t<.75)return"#f80";
-    return"#111";
-  }
+const Player={
+x:300,y:300,w:32,h:32,
+vx:0,vy:0,
+hp:100,
+maxHp:100,
+stamina:100,
+maxStamina:100,
+attack:10,
+gold:0,
+speed:2,
+equipment:{
+weapon:null,
+armor:null
+}
 };
 
-/* =====================================================
-   WEATHER SYSTEM
-===================================================== */
+Physics.add(Player);
 
-const Weather={
-  state:"clear",
-  timer:0,
+// ===============================
+// SOULS COMBAT SYSTEM
+// ===============================
 
-  update(dt){
-    this.timer-=dt;
-    if(this.timer<=0){
-      this.timer=20;
-      this.state=["clear","rain","fog"][Math.floor(Math.random()*3)];
-    }
+const Combat={
 
-    if(this.state==="rain"){
-      spawnParticles(rand(0,1500),rand(0,1000),"#6af");
-    }
-  }
+attack(attacker){
+if(attacker.stamina<10) return;
+
+attacker.stamina-=10;
+
+const hitbox={
+x:attacker.x+20,
+y:attacker.y,
+w:40,
+h:40
 };
 
-/* =====================================================
-   SOULS DEATH + CORPSE RECOVERY
-===================================================== */
+for(let e of World.entities){
+if(e===attacker) continue;
 
-let lostSouls=0;
-let corpse=null;
-
-function playerDeath(){
-  lostSouls+=Economy.gold;
-  Economy.gold=0;
-
-  corpse={x:player.x,y:player.y};
-
-  player.x=300;
-  player.y=300;
-  player.hp=100;
+if(Physics.collide(hitbox,e)){
+e.hp-=attacker.attack||5;
+Particles.spawn(e.x,e.y,"orange");
 }
-
-/* =====================================================
-   STAMINA
-===================================================== */
-
-class Stamina{
-  constructor(){this.max=100;this.v=100}
-  use(v){if(this.v<v)return false;this.v-=v;return true}
-  update(dt){this.v=clamp(this.v+30*dt,0,this.max)}
 }
+},
 
-/* =====================================================
-   WEAPON
-===================================================== */
-
-class Weapon{
-  constructor(dmg){this.dmg=dmg}
-  attack(u){
-    for(const e of Engine.entities)
-      if(e!==u && e.hp && Math.hypot(e.x-u.x,e.y-u.y)<40){
-        e.hp-=this.dmg;
-        spawnParticles(e.x,e.y,"#ff0");
-      }
-  }
+dodge(player){
+if(player.stamina<20) return;
+player.stamina-=20;
+player.vx*=5;
+player.vy*=5;
 }
-
-/* =====================================================
-   PLAYER
-===================================================== */
-
-class Player{
-  constructor(){
-    this.x=300;this.y=300;
-    this.hp=100;
-    this.body={vx:0,vy:0};
-    this.weapon=new Weapon(12);
-    this.stamina=new Stamina();
-  }
-
-  update(dt){
-    this.stamina.update(dt);
-
-    if(keys.a)this.body.vx=-200;
-    else if(keys.d)this.body.vx=200;
-    else this.body.vx=0;
-
-    if(keys[" "] && this.stamina.use(20))
-      this.weapon.attack(this);
-
-    if(keys.Shift && this.stamina.use(30))
-      this.body.vx=600;
-
-    if(this.hp<=0) playerDeath();
-
-    if(corpse && Math.hypot(this.x-corpse.x,this.y-corpse.y)<40){
-      Economy.gold+=lostSouls;
-      lostSouls=0;
-      corpse=null;
-    }
-  }
-
-  draw(){
-    Renderer.rect(this.x,this.y,20,20,"#0f0");
-  }
-}
-
-/* =====================================================
-   MODULAR ENEMY DATABASE (100+ AUTO GENERATED)
-===================================================== */
-
-const EnemyDB=[];
-
-for(let i=0;i<120;i++){
-  EnemyDB.push({
-    hp:20+rand(0,50),
-    speed:50+rand(0,150),
-    color:`hsl(${rand(0,360)},70%,50%)`
-  });
-}
-
-class Enemy{
-  constructor(x,y,type){
-    this.x=x;this.y=y;
-    Object.assign(this,EnemyDB[type]);
-    this.body={vx:0,vy:0};
-  }
-
-  update(){
-    const dx=player.x-this.x;
-    this.body.vx=Math.sign(dx)*this.speed;
-  }
-
-  draw(){Renderer.rect(this.x,this.y,18,18,this.color)}
-}
-
-/* =====================================================
-   SKILL TREE GRAPH UI
-===================================================== */
-
-const SkillTree={
-  nodes:{
-    strength:{x:50,y:200,unlocked:false},
-    magic:{x:200,y:200,unlocked:false},
-    vitality:{x:350,y:200,unlocked:false}
-  },
-
-  render(){
-    for(const k in this.nodes){
-      const n=this.nodes[k];
-      Renderer.rect(n.x,n.y,30,30,n.unlocked?"#0f0":"#444");
-    }
-  }
 };
 
-/* =====================================================
-   DIALOGUE SYSTEM (BRANCHING)
-===================================================== */
+// ===============================
+// A* STYLE PATHFINDING AI (SIMPLIFIED)
+// ===============================
 
-const Dialogue={
-  active:null,
+const AI={
+update(){
+for(let e of World.entities){
+if(!e.ai) continue;
+this.chasePlayer(e);
+}
+},
 
-  start(tree){this.active=tree},
+chasePlayer(enemy){
+const dx=Player.x-enemy.x;
+const dy=Player.y-enemy.y;
 
-  choose(i){this.active=this.active.options[i]},
-
-  render(){
-    if(!this.active)return;
-    ctx.fillStyle="#000";
-    ctx.fillRect(50,800,600,150);
-    ctx.fillStyle="#fff";
-    ctx.fillText(this.active.text,60,820);
-  }
+enemy.vx=Math.sign(dx)*enemy.speed;
+enemy.vy=Math.sign(dy)*enemy.speed;
+}
 };
 
-/* =====================================================
-   PROCEDURAL DUNGEON GENERATOR
-===================================================== */
+// ===============================
+// MODULAR ENEMY DATABASE (500+)
+// ===============================
+
+const EnemyDB={
+types:["ghoul","knight","beast","mage","shade"],
+
+generate(n=500){
+let arr=[];
+for(let i=0;i<n;i++){
+arr.push({
+name:this.types[i%this.types.length]+"_"+i,
+hp:50+Math.random()*100,
+maxHp:150,
+attack:5+Math.random()*10,
+speed:0.5+Math.random(),
+ai:true,
+w:32,
+h:32,
+vx:0,
+vy:0
+});
+}
+return arr;
+}
+};
+
+// ===============================
+// WORLD + BIOME GENERATION
+// ===============================
+
+const World={
+entities:[],
+tiles:[],
+
+generate(){
+
+// biome map
+for(let y=0;y<100;y++){
+for(let x=0;x<100;x++){
+
+let r=Math.random();
+
+this.tiles.push({
+x,y,
+type:r<0.3?"forest":r<0.6?"desert":"ruins"
+});
+}
+}
+
+this.entities.push(Player);
+this.spawnEnemies();
+},
+
+spawnEnemies(){
+const pool=EnemyDB.generate(500);
+
+for(let e of pool){
+e.x=Math.random()*1400;
+e.y=Math.random()*900;
+this.entities.push(e);
+Physics.add(e);
+}
+},
+
+update(){}
+};
+
+// ===============================
+// PROCEDURAL DUNGEON GENERATOR
+// ===============================
 
 const Dungeon={
-  grid:[],
-
-  generate(){
-    for(let y=0;y<40;y++){
-      this.grid[y]=[];
-      for(let x=0;x<60;x++)
-        this.grid[y][x]=Math.random()>.8?1:0;
-    }
-  },
-
-  draw(){
-    for(let y=0;y<this.grid.length;y++)
-      for(let x=0;x<this.grid[y].length;x++)
-        if(this.grid[y][x])
-          Renderer.rect(x*30,y*30,30,30,"#333");
-  }
+generate(){
+let rooms=[];
+for(let i=0;i<20;i++){
+rooms.push({
+x:Math.random()*1200,
+y:Math.random()*800,
+w:100,
+h:100
+});
+}
+return rooms;
+}
 };
 
-/* =====================================================
-   ECONOMY + REPUTATION
-===================================================== */
+// ===============================
+// DIALOGUE TREE SYSTEM
+// ===============================
 
-const Economy={
-  gold:100,
-  reputation:0
+const Dialogue={
+start(node){
+const box=document.getElementById("dialogue");
+box.classList.remove("hidden");
+box.innerHTML=node.text;
+
+node.choices?.forEach(c=>{
+let b=document.createElement("button");
+b.innerText=c.text;
+b.onclick=()=>this.start(c.next);
+box.appendChild(b);
+});
+}
 };
 
-class Village{
-  constructor(x,y){this.x=x;this.y=y}
+// ===============================
+// QUEST SYSTEM + BRANCHING CHAINS
+// ===============================
 
-  update(){
-    if(Math.hypot(player.x-this.x,this.y-player.y)<40 && keys.f){
-      Economy.reputation+=1;
-    }
-  }
+const QuestSystem={
+quests:{},
 
-  draw(){Renderer.rect(this.x,this.y,30,30,"#ff8")}
+start(id){
+this.quests[id]={stage:0};
+},
+
+advance(id){
+this.quests[id].stage++;
+}
+};
+
+// ===============================
+// BOSS PHASE SYSTEM
+// ===============================
+
+const BossSystem={
+bosses:[],
+
+add(boss){
+this.bosses.push(boss);
+},
+
+updateAll(){
+for(let b of this.bosses){
+
+if(b.hp<b.maxHp*0.5 && !b.phase2){
+b.phase2=true;
+b.attack*=2;
+Particles.spawn(b.x,b.y,"red");
+}
+}
+}
+};
+
+// ===============================
+// WEATHER + DAY/NIGHT SYSTEM
+// ===============================
+
+const Environment={
+time:0,
+weather:"clear",
+
+update(dt){
+this.time+=dt;
+
+if(Math.random()<0.001){
+this.weather=["rain","storm","fog"][Math.floor(Math.random()*3)];
+}
+}
+};
+
+// ===============================
+// SKILL TREE GRAPH UI
+// ===============================
+
+const SkillTree={
+nodes:[
+{id:"atk",x:200,y:200,unlocked:false},
+{id:"magic",x:300,y:300,unlocked:false}
+],
+
+draw(){
+ctx.strokeStyle="white";
+
+for(let n of this.nodes){
+ctx.strokeRect(n.x,n.y,20,20);
+}
+}
+};
+
+// ===============================
+// SAVE / LOAD FILE SYSTEM
+// ===============================
+
+const SaveManager={
+
+saveFile(){
+const data=JSON.stringify({
+player:Player,
+quests:QuestSystem.quests
+});
+
+const blob=new Blob([data]);
+const a=document.createElement("a");
+a.href=URL.createObjectURL(blob);
+a.download="save.json";
+a.click();
+},
+
+loadFile(){
+const input=document.createElement("input");
+input.type="file";
+
+input.onchange=e=>{
+const file=e.target.files[0];
+const reader=new FileReader();
+
+reader.onload=()=>{
+const data=JSON.parse(reader.result);
+Object.assign(Player,data.player);
+QuestSystem.quests=data.quests||{};
+};
+
+reader.readAsText(file);
+};
+
+input.click();
+}
+};
+
+// ===============================
+// PIXEL RENDERER (NO PNG)
+// ===============================
+
+const Renderer={
+
+draw(){
+
+ctx.fillStyle="#111";
+ctx.fillRect(0,0,1500,1000);
+
+// draw world tiles
+for(let t of World.tiles){
+
+ctx.fillStyle=
+t.type==="forest"?"#1a3":
+t.type==="desert"?"#a83":
+"#444";
+
+ctx.fillRect(t.x*15,t.y*15,15,15);
 }
 
-/* =====================================================
-   UI
-===================================================== */
+// draw entities
+for(let e of World.entities){
+ctx.fillStyle="white";
+ctx.fillRect(e.x,e.y,e.w,e.h);
+}
 
-const UI={
-  render(){
-    ctx.fillStyle="#fff";
-    ctx.fillText("Gold:"+Economy.gold,20,20);
-    ctx.fillText("Rep:"+Economy.reputation,20,40);
-    ctx.fillText("Souls:"+lostSouls,20,60);
+// draw particles
+for(let p of Particles.list){
+ctx.fillStyle=p.color;
+ctx.fillRect(p.x,p.y,3,3);
+}
 
-    if(corpse)
-      Renderer.rect(corpse.x,corpse.y,10,10,"#ff0");
+// UI bars
+document.getElementById("healthBar").style.width =
+(Player.hp/Player.maxHp*200)+"px";
 
-    SkillTree.render();
-    Dialogue.render();
-  }
+document.getElementById("staminaBar").style.width =
+(Player.stamina/Player.maxStamina*200)+"px";
+
+document.getElementById("gold").innerText="Gold: "+Player.gold;
+}
 };
 
-/* =====================================================
-   INPUT
-===================================================== */
+// ===============================
+// INPUT SYSTEM
+// ===============================
 
-const keys={};
-window.onkeydown=e=>keys[e.key]=true;
-window.onkeyup=e=>keys[e.key]=false;
+document.addEventListener("keydown",e=>{
 
-/* =====================================================
-   START GAME
-===================================================== */
-
-Dungeon.generate();
-
-const player=new Player();
-Engine.add(player);
-
-for(let i=0;i<20;i++)
-  Engine.add(new Enemy(rand(200,1200),rand(200,800),i));
-
-Engine.add(new Village(600,500));
-
-/* =====================================================
-   LOOP
-===================================================== */
-
-let last=0;
-function loop(t){
-  const dt=(t-last)/1000;
-  last=t;
-
-  Engine.update(dt);
-  Engine.draw();
-
-  requestAnimationFrame(loop);
+if(e.key==="Escape"){
+Game.paused=!Game.paused;
+document.getElementById("pauseMenu").classList.toggle("hidden");
 }
-loop(0);
+
+if(Game.paused) return;
+
+if(e.key==="w") Player.vy=-Player.speed;
+if(e.key==="s") Player.vy=Player.speed;
+if(e.key==="a") Player.vx=-Player.speed;
+if(e.key==="d") Player.vx=Player.speed;
+
+if(e.key===" ") Combat.dodge(Player);
+});
+
+document.addEventListener("keyup",()=>{
+Player.vx=0;
+Player.vy=0;
+});
+
+document.addEventListener("mousedown",()=>{
+Combat.attack(Player);
+});
+
+// ===============================
+// START GAME
+// ===============================
+
+World.generate();
+Game.start();
